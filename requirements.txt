@@ -1,0 +1,21 @@
+# Core scientific stack
+numpy
+scipy
+pandas
+scikit-learn
+tqdm
+pyyaml
+
+# HuggingFace ecosystem
+transformers
+accelerate
+datasets
+peft
+
+# DSPy and LangChain
+dspy-ai
+langchain
+
+# Experiment tracking
+wandb
+mlflow
