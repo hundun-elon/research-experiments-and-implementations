@@ -5,11 +5,8 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, f1_score
 from scipy.stats import spearmanr
 from typing import List, Dict, Any, Optional
 
-
+# qwk to measure the agreeability between the true grade and the llms grade.
 def quadratic_weighted_kappa(y_true, y_pred, min_rating=None, max_rating=None):
-    """
-    Quadratic Weighted Kappa (QWK) between two rating vectors.
-    """
     assert len(y_true) == len(y_pred)
     y_true = np.asarray(y_true, dtype=int)
     y_pred = np.asarray(y_pred, dtype=int)
@@ -25,12 +22,12 @@ def quadratic_weighted_kappa(y_true, y_pred, min_rating=None, max_rating=None):
     for a, b in zip(y_true, y_pred):
         conf_mat[a - min_rating, b - min_rating] += 1
 
-    # Expected matrix
+    # expected matrix
     hist_true = np.bincount(y_true - min_rating, minlength=num_ratings)
     hist_pred = np.bincount(y_pred - min_rating, minlength=num_ratings)
     expected = np.outer(hist_true, hist_pred) / len(y_true)
 
-    # Weight matrix
+    # weight matrix
     W = np.zeros((num_ratings, num_ratings))
     for i in range(num_ratings):
         for j in range(num_ratings):
@@ -42,7 +39,7 @@ def quadratic_weighted_kappa(y_true, y_pred, min_rating=None, max_rating=None):
 
 def expected_calibration_error(y_true: List[int], y_prob: List[float], n_bins: int = 10) -> float:
     """
-    Expected Calibration Error (ECE).
+    expected calibration error (ECE).
     """
     y_true = np.array(y_true)
     y_prob = np.array(y_prob)
@@ -67,7 +64,7 @@ def brier_score(y_true: List[int], y_prob: List[float]) -> float:
     y_prob = np.array(y_prob, dtype=float)
     return np.mean((y_prob - y_true) ** 2)
 
-
+# accuracy with tolerance to account for the mistakes the hums can make.
 def accuracy_within_tolerance(y_true, y_pred, tolerance=1):
     """
     % of predictions within ±tolerance of human score.
