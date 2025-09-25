@@ -1,15 +1,28 @@
+import argparse
 import json
 import numpy as np
-import pandas as pd
-from sklearn.metrics import mean_absolute_error, mean_squared_error, f1_score
-from scipy.stats import spearmanr
 from typing import List, Dict, Any, Optional
 
-# qwk to measure the agreeability between the true grade and the llms grade.
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+from scipy.stats import spearmanr
+
+try:
+    import wandb
+    WANDB_AVAILABLE = True
+except ImportError:
+    WANDB_AVAILABLE = False
+
+
+# ----------------------------
+# Metrics
+# ----------------------------
 def quadratic_weighted_kappa(y_true, y_pred, min_rating=None, max_rating=None):
+    """
+    Quadratic Weighted Kappa (QWK) to measure inter-rater reliability.
+    """
     assert len(y_true) == len(y_pred)
     y_true = np.asarray(y_true, dtype=int)
-    y_pred = np.asarray(y_pred, dtype=int)
+    y_pred = np.asarray(np.rint(y_pred), dtype=int)  # round predictions
 
     if min_rating is None:
         min_rating = min(y_true.min(), y_pred.min())
@@ -39,7 +52,7 @@ def quadratic_weighted_kappa(y_true, y_pred, min_rating=None, max_rating=None):
 
 def expected_calibration_error(y_true: List[int], y_prob: List[float], n_bins: int = 10) -> float:
     """
-    expected calibration error (ECE).
+    Expected Calibration Error (ECE).
     """
     y_true = np.array(y_true)
     y_prob = np.array(y_prob)
@@ -64,7 +77,7 @@ def brier_score(y_true: List[int], y_prob: List[float]) -> float:
     y_prob = np.array(y_prob, dtype=float)
     return np.mean((y_prob - y_true) ** 2)
 
-# accuracy with tolerance to account for the mistakes the hums can make.
+
 def accuracy_within_tolerance(y_true, y_pred, tolerance=1):
     """
     % of predictions within ±tolerance of human score.
@@ -74,47 +87,78 @@ def accuracy_within_tolerance(y_true, y_pred, tolerance=1):
     return np.mean(np.abs(y_true - y_pred) <= tolerance)
 
 
+# ----------------------------
+# Aggregator
+# ----------------------------
 def evaluate_predictions(data: List[Dict[str, Any]], max_score: Optional[int] = None) -> Dict[str, float]:
     """
-    Compute all metrics from a list of predictions in standard format.
+    Compute all metrics from a list of predictions in standard format:
+    [
+      {"id": "1", "human_score": 5, "model_score": 4, "confidence": 0.7},
+      ...
+    ]
     """
-    y_true = [d["human_score"] for d in data]
-    y_pred = [d["model_score"] for d in data]
+    y_true = np.array([d["human_score"] for d in data])
+    y_pred = np.array([d["model_score"] for d in data])
     confidences = [d.get("confidence") for d in data if d.get("confidence") is not None]
 
     results = {}
 
     # Basic metrics
-    results["MAE"] = mean_absolute_error(y_true, y_pred)
-    results["RMSE"] = mean_squared_error(y_true, y_pred, squared=False)
-    results["QWK"] = quadratic_weighted_kappa(y_true, y_pred)
-    results["Accuracy_±1"] = accuracy_within_tolerance(y_true, y_pred, tolerance=1)
-    results["Accuracy_±2"] = accuracy_within_tolerance(y_true, y_pred, tolerance=2)
+    results["MAE"] = float(mean_absolute_error(y_true, y_pred))
+    results["RMSE"] = float(mean_squared_error(y_true, y_pred, squared=False))
+    results["QWK"] = float(quadratic_weighted_kappa(y_true, y_pred))
+    results["Accuracy_±1"] = float(accuracy_within_tolerance(y_true, y_pred, tolerance=1))
+    results["Accuracy_±2"] = float(accuracy_within_tolerance(y_true, y_pred, tolerance=2))
 
     # Rank correlation
     rho, _ = spearmanr(y_true, y_pred)
-    results["Spearman_rho"] = rho
+    results["Spearman_rho"] = float(rho)
 
     # Calibration
     if len(confidences) == len(y_true):
-        results["ECE"] = expected_calibration_error(y_true, confidences)
-        results["Brier"] = brier_score(y_true, confidences)
+        results["ECE"] = float(expected_calibration_error(y_true, confidences))
+        results["Brier"] = float(brier_score(y_true, confidences))
 
     return results
 
 
+# ----------------------------
+# Helpers
+# ----------------------------
 def load_jsonl(path: str) -> List[Dict[str, Any]]:
     """Load JSONL into list of dicts."""
     with open(path, "r") as f:
         return [json.loads(line) for line in f]
 
 
+def log_to_wandb(results: Dict[str, float]):
+    """Optionally log metrics to W&B if available."""
+    if WANDB_AVAILABLE:
+        wandb.log(results)
+    else:
+        print("[WARN] wandb not installed; skipping logging.")
+
+
+# ----------------------------
+# CLI
+# ----------------------------
 if __name__ == "__main__":
-    # Example usage
-    sample = [
-        {"id": "1", "human_score": 5, "model_score": 4, "confidence": 0.7},
-        {"id": "2", "human_score": 3, "model_score": 3, "confidence": 0.6},
-        {"id": "3", "human_score": 4, "model_score": 5, "confidence": 0.8},
-    ]
-    metrics = evaluate_predictions(sample)
-    print(metrics)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", type=str, help="Path to predictions JSONL file")
+    args = parser.parse_args()
+
+    if args.input:
+        data = load_jsonl(args.input)
+        metrics = evaluate_predictions(data)
+        print(json.dumps(metrics, indent=2))
+        log_to_wandb(metrics)
+    else:
+        # Fallback demo
+        sample = [
+            {"id": "1", "human_score": 5, "model_score": 4, "confidence": 0.7},
+            {"id": "2", "human_score": 3, "model_score": 3, "confidence": 0.6},
+            {"id": "3", "human_score": 4, "model_score": 5, "confidence": 0.8},
+        ]
+        metrics = evaluate_predictions(sample)
+        print(json.dumps(metrics, indent=2))
