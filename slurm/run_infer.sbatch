@@ -5,8 +5,11 @@
 #SBATCH -t 02:00:00
 #SBATCH --output=logs/infer-%j.out
 
-# Load CUDA
-module load cuda/12.0
+# Ensure environment modules work
+source /etc/profile
+
+# Load CUDA if needed (optional, cluster may already have it)
+# module load cuda/12.0
 
 # Activate conda
 eval "$($HOME/miniconda/bin/conda shell.bash hook)"
@@ -15,9 +18,12 @@ conda activate llm-exp
 # Move into repo
 cd /home-mscluster/smbuyazi/research/llm-grading
 
-# Input/output
-INPUT=data/pilot/pilot.jsonl
-OUTPUT=runs/results/pilot_mistral.jsonl
+# Make sure output folder exists
+mkdir -p runs/results
+
+# Input/output files (use absolute path if needed)
+INPUT=/home-mscluster/smbuyazi/research/llm-grading/data/pilot/pilot.jsonl
+OUTPUT=/home-mscluster/smbuyazi/research/llm-grading/runs/results/pilot_mistral.jsonl
 
 # Run inference
 python scripts/infer.py \
